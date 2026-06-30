@@ -1,0 +1,82 @@
+from flask import Flask, render_template, request
+import sqlite3
+import uuid
+
+app = Flask(__name__)
+
+# Create Database
+def init_db():
+    conn = sqlite3.connect("bus.db")
+    c = conn.cursor()
+
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS bookings(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticket_id TEXT,
+            name TEXT,
+            age INTEGER,
+            source TEXT,
+            destination TEXT,
+            price INTEGER
+        )
+    """)
+
+    conn.commit()
+    conn.close()
+
+init_db()
+
+
+def calculate_price(source, destination):
+    routes = {
+        ("Hyderabad", "Vijayawada"): 350,
+        ("Hyderabad", "Warangal"): 180,
+        ("Hyderabad", "Tirupati"): 600,
+        ("Vijayawada", "Visakhapatnam"): 400,
+        ("Warangal", "Hyderabad"): 180,
+        ("Tirupati", "Hyderabad"): 600
+    }
+
+    return routes.get((source, destination), 250)
+
+
+@app.route("/")
+def home():
+    return render_template("index.html")
+
+
+@app.route("/book", methods=["POST"])
+def book():
+
+    name = request.form["name"]
+    age = request.form["age"]
+    source = request.form["source"]
+    destination = request.form["destination"]
+
+    price = calculate_price(source, destination)
+
+    ticket_id = str(uuid.uuid4())[:8].upper()
+
+    conn = sqlite3.connect("bus.db")
+    c = conn.cursor()
+
+    c.execute(
+        "INSERT INTO bookings(ticket_id,name,age,source,destination,price) VALUES(?,?,?,?,?,?)",
+        (ticket_id, name, age, source, destination, price)
+    )
+
+    conn.commit()
+    conn.close()
+
+    return render_template(
+        "success.html",
+        ticket=ticket_id,
+        name=name,
+        source=source,
+        destination=destination,
+        price=price
+    )
+
+
+if __name__ == "__main__":
+    app.run(debug=True)
