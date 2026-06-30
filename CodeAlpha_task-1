@@ -1,0 +1,53 @@
+import pandas as pd
+
+# Load existing database
+database = pd.read_csv("database.csv")
+
+# Load new incoming data
+new_data = pd.read_csv("new_data.csv")
+
+verified_entries = []
+redundant_entries = []
+
+# Store existing emails
+existing_emails = set(database["Email"])
+
+# Validate incoming data
+for _, row in new_data.iterrows():
+
+    if row["Email"] in existing_emails:
+        redundant_entries.append(row)
+
+    else:
+        verified_entries.append(row)
+        existing_emails.add(row["Email"])
+
+# Convert lists to DataFrames
+verified_df = pd.DataFrame(verified_entries)
+redundant_df = pd.DataFrame(redundant_entries)
+
+# Update database with unique entries only
+updated_database = pd.concat(
+    [database, verified_df],
+    ignore_index=True
+)
+
+# Save files
+updated_database.to_csv(
+    "database.csv",
+    index=False
+)
+
+verified_df.to_csv(
+    "verified_data.csv",
+    index=False
+)
+
+redundant_df.to_csv(
+    "redundant_data.csv",
+    index=False
+)
+
+print("Validation Completed")
+print("Verified Entries:", len(verified_df))
+print("Redundant Entries:", len(redundant_df))
