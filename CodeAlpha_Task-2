@@ -1,0 +1,174 @@
+from flask import Flask, render_template, request, redirect, url_for
+import sqlite3
+from cryptography.fernet import Fernet
+import os
+
+app = Flask(__name__)
+app.secret_key = "mysecretkey"
+
+# ---------------- AES PERMANENT KEY ----------------
+
+if not os.path.exists("secret.key"):
+    with open("secret.key", "wb") as key_file:
+        key_file.write(Fernet.generate_key())
+
+with open("secret.key", "rb") as key_file:
+    key = key_file.read()
+
+cipher = Fernet(key)
+
+# ---------------- CAPABILITY CODE ----------------
+
+CAPABILITY_CODE = "CodeAlpha123"
+
+# ---------------- DATABASE ----------------
+
+conn = sqlite3.connect("database.db")
+cursor = conn.cursor()
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS users(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE,
+    password TEXT
+)
+""")
+
+conn.commit()
+conn.close()
+
+
+# ---------------- REGISTER ----------------
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+
+    if request.method == 'POST':
+
+        username = request.form['username']
+        password = request.form['password']
+        capability_code = request.form['capability_code']
+
+        # ---------- Layer 1 : Input Validation ----------
+
+        dangerous_words = [
+            "'", '"', ";", "--",
+            "DROP", "SELECT",
+            "DELETE", "INSERT",
+            "UPDATE", "ALTER"
+        ]
+
+        for word in dangerous_words:
+            if word.lower() in username.lower():
+                return "Possible SQL Injection Detected!"
+
+        # ---------- Capability Code ----------
+
+        if capability_code != CAPABILITY_CODE:
+            return "Invalid Capability Code"
+
+        # ---------- Encrypt Password ----------
+
+        encrypted_password = cipher.encrypt(
+            password.encode()
+        ).decode()
+
+        conn = sqlite3.connect("database.db")
+        cursor = conn.cursor()
+
+        # ---------- Layer 2 : Parameterized Query ----------
+
+        cursor.execute(
+            "SELECT * FROM users WHERE username=?",
+            (username,)
+        )
+
+        user = cursor.fetchone()
+
+        if user:
+            conn.close()
+            return "Username Already Exists"
+
+        cursor.execute(
+            "INSERT INTO users(username,password) VALUES(?,?)",
+            (username, encrypted_password)
+        )
+
+        conn.commit()
+        conn.close()
+
+        return "Registration Successful"
+
+    return render_template("register.html")
+
+
+# ---------------- LOGIN ----------------
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+
+    if request.method == 'POST':
+
+        username = request.form['username']
+        password = request.form['password']
+
+        # ---------- Layer 1 : Input Validation ----------
+
+        dangerous_words = [
+            "'", '"', ";", "--",
+            "DROP", "SELECT",
+            "DELETE", "INSERT",
+            "UPDATE", "ALTER"
+        ]
+
+        for word in dangerous_words:
+            if word.lower() in username.lower():
+                return "Possible SQL Injection Detected!"
+
+        conn = sqlite3.connect("database.db")
+        cursor = conn.cursor()
+
+        # ---------- Layer 2 : Parameterized Query ----------
+
+        cursor.execute(
+            "SELECT password FROM users WHERE username=?",
+            (username,)
+        )
+
+        user = cursor.fetchone()
+
+        conn.close()
+
+        if user:
+
+            encrypted_password = user[0]
+
+            try:
+                decrypted_password = cipher.decrypt(
+                    encrypted_password.encode()
+                ).decode()
+
+                if decrypted_password == password:
+                    return "Login Successful"
+                else:
+                    return "Incorrect Password"
+
+            except:
+                return "Password Decryption Failed"
+
+        return "User Not Found"
+
+    return render_template("login.html")
+
+
+# ---------------- HOME ----------------
+
+@app.route('/')
+def home():
+    return redirect(url_for('register'))
+
+
+# ---------------- RUN ----------------
+
+if __name__ == '__main__':
+    app.run(debug=True)
